@@ -3,21 +3,21 @@
 #import <React/RCTEventEmitter.h>
 #import <React/RCTBridgeModule.h>
 #import <Photos/Photos.h>
+#import <React/RCTUtils.h>
+#import "VydiaRNFileUploader.h"
 
-@interface VydiaRNFileUploader : RCTEventEmitter <RCTBridgeModule, NSURLSessionTaskDelegate>
-{
-  NSMutableDictionary *_responsesData;
-}
-@end
+static CompletionHandler storedCompletionHandler;
 
 @implementation VydiaRNFileUploader
+{
+    NSMutableDictionary *_responsesData;
+}
 
 RCT_EXPORT_MODULE();
 
 @synthesize bridge = _bridge;
 static int uploadId = 0;
 static RCTEventEmitter* staticEventEmitter = nil;
-static NSString *BACKGROUND_SESSION_ID = @"ReactNativeBackgroundUpload";
 NSURLSession *_urlSession = nil;
 
 + (BOOL)requiresMainQueueSetup {
@@ -269,7 +269,8 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
 
 - (NSURLSession *)urlSession: (NSString *) groupId {
     if (_urlSession == nil) {
-        NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:BACKGROUND_SESSION_ID];
+        NSString *sessonIdentifier = [[self class] getSessonIdentifier];
+        NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:sessonIdentifier];
         if (groupId != nil && ![groupId isEqualToString:@""]) {
             sessionConfiguration.sharedContainerIdentifier = groupId;
         }
@@ -277,6 +278,51 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     }
 
     return _urlSession;
+}
+
+-(NSString*) getNSURLSeesionStateString:(NSURLSessionTaskState) state {
+    switch (state) {
+        case NSURLSessionTaskStateRunning:
+            return @"running";
+        case NSURLSessionTaskStateSuspended:
+            return @"suspended";
+        case NSURLSessionTaskStateCanceling:
+            return @"canceling";
+        case NSURLSessionTaskStateCompleted:
+            return @"completed";
+    }
+}
+RCT_EXPORT_METHOD(checkForExistingUploads:(NSString *)groupId resolve:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+    NSURLSession* urlSession = [self urlSession: groupId];
+    NSMutableArray *idsFound = [[NSMutableArray alloc] init];
+    [urlSession getTasksWithCompletionHandler:^(NSArray<NSURLSessionDataTask *> *dataTasks, NSArray<NSURLSessionUploadTask *> *uploadTasks, NSArray<NSURLSessionDownloadTask *> *downloadTasks) {
+        for (NSURLSessionUploadTask *uploadTask in uploadTasks) {
+            NSURLSessionUploadTask __strong *task = uploadTask;
+            NSNumber *percent = task.countOfBytesExpectedToSend > 0 ? [NSNumber numberWithFloat:(float)task.countOfBytesSent/(float)task.countOfBytesExpectedToSend] : @0.0;
+            NSHTTPURLResponse *response = (NSHTTPURLResponse *)task.response;
+            [idsFound addObject:@{
+                                  @"id": task.taskDescription,
+                                  @"state": [self getNSURLSeesionStateString:task.state],
+                                  @"percentage": percent,
+                                  @"responseCode": response? [NSNumber numberWithInteger:response.statusCode]: [NSNull null],
+                                  @"error":task.error? RCTJSErrorFromNSError(task.error): [NSNull null],
+                                  }];
+        }
+        resolve(idsFound);
+    }];
+
+
+}
++ (NSString*) getSessonIdentifier {
+    NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *sessonIdentifier = [bundleIdentifier stringByAppendingString:@".ReactNativeBackgroundUpload"];
+    return sessonIdentifier;
+}
++ (void)setCompletionHandlerWithIdentifier: (NSString *)identifier completionHandler: (CompletionHandler)completionHandler {
+    NSString *sessonIdentifier = [[self class] getSessonIdentifier];
+    if ([sessonIdentifier isEqualToString:identifier]) {
+        storedCompletionHandler = completionHandler;
+    }
 }
 
 #pragma NSURLSessionTaskDelegate
@@ -340,6 +386,15 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
         _responsesData[@(dataTask.taskIdentifier)] = responseData;
     } else {
         [responseData appendData:data];
+    }
+}
+
+- (void)URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session {
+    if (storedCompletionHandler) {
+        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+            storedCompletionHandler();
+            storedCompletionHandler = nil;
+        }];
     }
 }
 

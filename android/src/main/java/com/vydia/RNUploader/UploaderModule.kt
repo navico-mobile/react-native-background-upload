@@ -126,6 +126,7 @@ class UploaderModule(val reactContext: ReactApplicationContext) : ReactContextBa
    */
   @ReactMethod
   fun startUpload(options: ReadableMap, promise: Promise) {
+    Log.d(TAG,"startUpload options:"+options.toString())
     for (key in arrayOf("url", "path")) {
       if (!options.hasKey(key)) {
         promise.reject(java.lang.IllegalArgumentException("Missing '$key' field."))
@@ -203,6 +204,9 @@ class UploaderModule(val reactContext: ReactApplicationContext) : ReactContextBa
       }
       request.setMethod(method!!)
               .setMaxRetries(maxRetries)
+
+      Log.d(TAG,"startUpload notification:"+notification.toString())
+
       if (notification.getBoolean("enabled")) {
         val notificationConfig = UploadNotificationConfig(
                 notificationChannelId = notificationChannelID,
@@ -225,6 +229,19 @@ class UploaderModule(val reactContext: ReactApplicationContext) : ReactContextBa
                         message = if (notification.hasKey("onCancelledMessage")) notification.getString("onCancelledMessage")!! else ""
                 )
         )
+        var stringBuilder = StringBuilder("\nnotificationChannelId: ")
+            .append(notificationConfig.notificationChannelId)
+            .append("\nisRingToneEnabled: ")
+            .append(notificationConfig.isRingToneEnabled)
+            .append("\nprogress: ")
+            .append("title '${notificationConfig.progress.title}' message '${notificationConfig.progress.message}'")
+            .append("\nsuccess: ")
+            .append("title '${notificationConfig.success.title}' message '${notificationConfig.success.message}' autoClear ${notificationConfig.success.autoClear}")
+            .append("\nerror: ")
+            .append("title '${notificationConfig.error.title}' message '${notificationConfig.error.message}'")
+            .append("\ncancelled: ")
+            .append("title '${notificationConfig.cancelled.title}' message '${notificationConfig.cancelled.message}'");
+        Log.d(TAG, "setNotificationConfig "+stringBuilder.toString())
         request.setNotificationConfig { _, _ ->
           notificationConfig
         }

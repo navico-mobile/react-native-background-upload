@@ -109,6 +109,13 @@ declare module "react-native-background-upload" {
 
     export type UploadListenerEvent = 'progress' | 'error' | 'completed' | 'cancelled'
 
+    export type UploadTask = {
+        id:string,
+        state: "running"|"suspended"|"canceling"|"completed",
+        percentage: number,
+        responseCode?: number,
+        error?:Error,
+      };
 
     export default class Upload {
         static startUpload(options: UploadOptions | MultipartUploadOptions): Promise<uploadId>
@@ -118,6 +125,7 @@ declare module "react-native-background-upload" {
         static addListener(event: 'cancelled', uploadId: uploadId, callback: (data: EventData) => void): void
         static getFileInfo(path: string): Promise<FileInfo>
         static cancelUpload(uploadId: uploadId): Promise<boolean>
+        static checkForExistingUploads(groupId?: string): Promise<UploadTask[]>
     }
 
 }
